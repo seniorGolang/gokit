@@ -10,6 +10,8 @@ import (
 
 var Log Logger
 type Logger = *logrus.Entry
+type Fields = logrus.Fields
+type FieldMap = logrus.FieldMap
 
 func init() {
 	Log = logrus.WithTime(time.Now())
