@@ -87,7 +87,7 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var reqList []*Request
+	var reqList []Request
 
 	if err = json.Unmarshal(bodyData, &reqList); err != nil {
 
