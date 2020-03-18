@@ -126,7 +126,9 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		req.Method = urlMethod
+		if urlMethod != "" {
+			req.Method = urlMethod
+		}
 		ecm, ok := s.ecm[req.Method]
 
 		if ! ok {
