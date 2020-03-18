@@ -7,14 +7,16 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 
 	httpTransport "github.com/go-kit/kit/transport/http"
 	"github.com/gorilla/mux"
+
+	"github.com/seniorGolang/gokit/logger"
 )
 
-const (
-	reqID = "requestID"
-)
+const reqID = "requestID"
+var log = logger.Log.WithField("module", "httpServer")
 
 // Server wraps an endpoint and implements http.Handler.
 type Server struct {
@@ -85,93 +87,148 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decode the body into an object
-	var req Request
-	err = json.Unmarshal(bodyData, &req)
-	if err != nil {
-		rpcErr := parseError("JSON could not be decoded: " + err.Error())
-		s.errorEncoder(ctx, rpcErr, w)
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	var reqList []Request
+
+	if err = json.Unmarshal(bodyData, &reqList); err != nil {
+
+		var req Request
+		if err = json.Unmarshal(bodyData, &req); err != nil {
+			rpcErr := parseError("request body could not be decoded: " + err.Error())
+			s.errorEncoder(ctx, rpcErr, w)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		} else {
+			reqList = append(reqList, req)
+		}
 	}
 
-	var ok bool
-	var method string
-	vars := mux.Vars(r)
+	var wg sync.WaitGroup
+	var respList []Response
 
-	if method, ok = vars["method"]; !ok && req.Method == "" {
+	urlMethod, _ := mux.Vars(r)["method"]
 
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, fmt.Sprintf("404 unknown method '%s'\n", method))
-		return
+	for _, req := range reqList {
 
-	} else if req.Method != "" && req.Method != method {
+		if urlMethod != "" && req.Method != urlMethod {
 
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = io.WriteString(w, fmt.Sprintf("400 incorrect method '%s != %s'\n", method, req.Method))
-		return
+			if req.ID != nil {
+				respList = append(respList, Response{
+					ID:      req.ID,
+					JSONRPC: Version,
+					Error: &Error{
+						Code:    MethodNotFoundError,
+						Message: fmt.Sprintf("incorrect method: %s != %s", urlMethod, req.Method),
+					},
+				})
+			}
+			continue
+		}
 
-	} else {
-		req.Method = method
+		req.Method = urlMethod
+		ecm, ok := s.ecm[req.Method]
+
+		if ! ok {
+			if req.ID != nil {
+				respList = append(respList, Response{
+					ID:      req.ID,
+					JSONRPC: Version,
+					Error: &Error{
+						Code:    MethodNotFoundError,
+						Message: fmt.Sprintf("method %s not found", req.Method),
+					},
+				})
+			}
+			continue
+		}
+
+		ctx = context.WithValue(ctx, reqID, req.ID)
+		reqParams, err := ecm.Decode(ctx, req.Params)
+
+		if err != nil {
+			if req.ID != nil {
+				respList = append(respList, Response{
+					ID:      req.ID,
+					JSONRPC: Version,
+					Error: &Error{
+						Code:    InvalidParamsError,
+						Message: fmt.Sprintf("decode params error: %s", err.Error()),
+					},
+				})
+			}
+			continue
+		}
+
+		wg.Add(1)
+
+		go func(req Request) {
+
+			defer wg.Done()
+
+			response, err := ecm.Endpoint(ctx, reqParams)
+
+			if err != nil {
+
+				if req.ID != nil {
+					respList = append(respList, Response{
+						ID:      req.ID,
+						JSONRPC: Version,
+						Error: &Error{
+							Data:    err,
+							Message: err.Error(),
+							Code:    InternalError,
+						},
+					})
+				}
+				return
+			}
+
+			if req.ID != nil {
+
+				result, err := ecm.Encode(ctx, response)
+
+				if err != nil {
+					if req.ID != nil {
+						respList = append(respList, Response{
+							ID:      req.ID,
+							JSONRPC: Version,
+							Error: &Error{
+								Code:    InternalError,
+								Message: fmt.Sprintf("response encode error: %s", err.Error()),
+							},
+						})
+					}
+					return
+				}
+
+				respList = append(respList, Response{
+					ID:      req.ID,
+					JSONRPC: Version,
+					Result:  result,
+				})
+			}
+		}(req)
 	}
 
-	ctx = context.WithValue(ctx, reqID, req.ID)
+	wg.Wait()
 
-	// Get the endpoint and codecs from the map using the method
-	// defined in the JSON  object
-	ecm, ok := s.ecm[req.Method]
-	if !ok {
-		err := methodNotFoundError(fmt.Sprintf("Method %s was not found.", req.Method))
-		s.errorEncoder(ctx, err, w)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", ContentType)
 
-	// Decode the JSON "params"
-	reqParams, err := ecm.Decode(ctx, req.Params)
-	if err != nil {
-		s.errorEncoder(ctx, err, w)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// Call the Endpoint with the params
-	response, err := ecm.Endpoint(ctx, reqParams)
-	if err != nil {
-		s.errorEncoder(ctx, err, w)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	if len(respList) == 1 {
+		if err := json.NewEncoder(w).Encode(respList[0]); err != nil {
+			log.WithError(err).Error("encode error")
+			return
+		}
+	} else if len(respList) == 1 {
+		if err := json.NewEncoder(w).Encode(respList); err != nil {
+			log.WithError(err).Error("encode error")
+			return
+		}
 	}
 
 	for _, f := range s.after {
 		ctx = f(ctx, w)
 	}
-
-	res := Response{
-		ID:      req.ID,
-		JSONRPC: Version,
-	}
-
-	// Encode the response from the Endpoint
-	resParams, err := ecm.Encode(ctx, response)
-	if err != nil {
-		s.errorEncoder(ctx, err, w)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	res.Result = resParams
-
-	w.Header().Set("Content-Type", ContentType)
-
-	if err := json.NewEncoder(w).Encode(res); err != nil {
-		s.errorEncoder(ctx, err, w)
-		w.WriteHeader(http.StatusInternalServerError)
-	}
-
-	w.WriteHeader(http.StatusOK)
 }
 
 // DefaultErrorEncoder writes the error to the ResponseWriter,
