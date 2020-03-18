@@ -111,7 +111,7 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, req := range reqList {
 
-		if urlMethod != "" && req.Method != urlMethod {
+		if urlMethod != "" && req.Method != "" && req.Method != urlMethod {
 
 			if req.ID != nil {
 				respList = append(respList, Response{
