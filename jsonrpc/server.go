@@ -221,7 +221,7 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.WithError(err).Error("encode error")
 			return
 		}
-	} else if len(respList) == 1 {
+	} else if len(respList) > 1 {
 		if err := json.NewEncoder(w).Encode(respList); err != nil {
 			log.WithError(err).Error("encode error")
 			return
