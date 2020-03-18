@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"bitbucket.org/ronte/msg-gokit-packages/types/uuid"
 	"github.com/go-kit/kit/endpoint"
 	httpTransport "github.com/go-kit/kit/transport/http"
+
+	"github.com/seniorGolang/gokit/types/uuid"
 )
 
 // Client wraps a JSON RPC method and provides a method that implements endpoint.Endpoint.

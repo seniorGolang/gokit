@@ -7,7 +7,7 @@ import (
 
 	"github.com/openzipkin/zipkin-go/propagation/b3"
 
-	"bitbucket.org/ronte/msg-gokit-packages/types/uuid"
+	"github.com/seniorGolang/gokit/types/uuid"
 )
 
 type contextKey string

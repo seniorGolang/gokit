@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 
 	httpTransport "github.com/go-kit/kit/transport/http"
@@ -75,13 +76,22 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx = f(ctx, r)
 	}
 
-	// Decode the body into an  object
+	bodyData, err := ioutil.ReadAll(r.Body)
+
+	if err != nil {
+		rpcErr := parseError("read body error: " + err.Error())
+		s.errorEncoder(ctx, rpcErr, w)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// Decode the body into an object
 	var req Request
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.Unmarshal(bodyData, &req)
 	if err != nil {
 		rpcErr := parseError("JSON could not be decoded: " + err.Error())
 		s.errorEncoder(ctx, rpcErr, w)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
