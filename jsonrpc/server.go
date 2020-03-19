@@ -91,8 +91,6 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err = json.Unmarshal(bodyData, &reqList); err != nil {
 
-		log.WithError(err).Warning()
-
 		var req Request
 		if err = json.Unmarshal(bodyData, &req); err != nil {
 			rpcErr := parseError("request body could not be decoded: " + err.Error())
