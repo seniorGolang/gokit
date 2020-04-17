@@ -12,7 +12,7 @@ import (
 	"github.com/seniorGolang/gokit/types/uuid"
 )
 
-type DecodeResponseError func(context.Context, Response) (err error)
+type DecodeResponseError func(context.Context, json.RawMessage) (err error)
 type ClientRequestFunc func(context.Context, *fasthttp.Request) context.Context
 type ClientResponseFunc func(context.Context, *fasthttp.Response) context.Context
 
@@ -106,19 +106,25 @@ func (c Client) Endpoint() endpoint.Endpoint {
 		}
 
 		// Decode the body into an object
-		var rpcRes Response
-		if err = json.Unmarshal(resp.Body(), &rpcRes); err != nil {
+		var rpcResRaw ResponseRaw
+		if err = json.Unmarshal(resp.Body(), &rpcResRaw); err != nil {
 			return
 		}
 
-		if c.errDecoder != nil {
-			if err = c.errDecoder(ctx, rpcRes); err != nil {
+		if rpcResRaw.Error != nil && c.errDecoder != nil {
+			if err = c.errDecoder(ctx, rpcResRaw.Error); err != nil {
 				return
 			}
 		}
 
 		for _, f := range c.after {
 			ctx = f(ctx, resp)
+		}
+
+		rpcRes := Response{
+			ID:      rpcResRaw.ID,
+			Result:  rpcResRaw.Result,
+			JSONRPC: rpcResRaw.JSONRPC,
 		}
 
 		return c.dec(ctx, rpcRes)

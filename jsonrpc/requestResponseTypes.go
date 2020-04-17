@@ -72,6 +72,14 @@ type Response struct {
 	ID      *RequestID      `json:"id"`
 }
 
+type ResponseRaw struct {
+	ID      *RequestID      `json:"id"`
+	JSONRPC string          `json:"jsonrpc"`
+
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   json.RawMessage `json:"error,omitempty"`
+}
+
 const (
 	// Version defines the version of the JSON RPC implementation
 	Version string = "2.0"
