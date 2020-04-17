@@ -12,20 +12,21 @@ import (
 	"github.com/seniorGolang/gokit/types/uuid"
 )
 
+type DecodeResponseError func(context.Context, Response) (err error)
 type ClientRequestFunc func(context.Context, *fasthttp.Request) context.Context
 type ClientResponseFunc func(context.Context, *fasthttp.Response) context.Context
 
 type Client struct {
-
 	method string
 	tgtURL *url.URL
 	client fasthttp.Client
 
-	enc       EncodeRequestFunc
-	dec       DecodeResponseFunc
-	before    []ClientRequestFunc
-	after     []ClientResponseFunc
-	requestID RequestIDGenerator
+	enc        EncodeRequestFunc
+	dec        DecodeResponseFunc
+	before     []ClientRequestFunc
+	after      []ClientResponseFunc
+	errDecoder DecodeResponseError
+	requestID  RequestIDGenerator
 }
 
 func NewClient(uri, method string, options ...ClientOption) *Client {
@@ -110,6 +111,12 @@ func (c Client) Endpoint() endpoint.Endpoint {
 			return
 		}
 
+		if c.errDecoder != nil {
+			if err = c.errDecoder(ctx, rpcRes); err != nil {
+				return
+			}
+		}
+
 		for _, f := range c.after {
 			ctx = f(ctx, resp)
 		}
@@ -154,6 +161,10 @@ func ClientAfter(after ...ClientResponseFunc) ClientOption {
 
 func ClientRequestEncoder(enc EncodeRequestFunc) ClientOption {
 	return func(c *Client) { c.enc = enc }
+}
+
+func ClientResponseErrorDecoder(enc DecodeResponseError) ClientOption {
+	return func(c *Client) { c.errDecoder = enc }
 }
 
 func ClientResponseDecoder(dec DecodeResponseFunc) ClientOption {
