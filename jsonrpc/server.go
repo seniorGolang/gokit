@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 
 	httpTransport "github.com/go-kit/kit/transport/http"
@@ -16,6 +17,7 @@ import (
 )
 
 const reqID = "requestID"
+
 var log = logger.Log.WithField("module", "httpServer")
 
 // Server wraps an endpoint and implements http.Handler.
@@ -29,8 +31,15 @@ type Server struct {
 
 // NewServer constructs a new server, which implements http.Server.
 func NewServer(ecm EndpointCodecMap, options ...ServerOption) *Server {
+
+	normECM := make(EndpointCodecMap)
+
+	for method, endpoint := range ecm {
+		normECM[strings.ToLower(method)] = endpoint
+	}
+
 	s := &Server{
-		ecm:          ecm,
+		ecm:          normECM,
 		errorEncoder: DefaultErrorEncoder,
 	}
 	for _, option := range options {
@@ -106,8 +115,11 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var respList []Response
 
 	urlMethod, _ := mux.Vars(r)["method"]
+	urlMethod = strings.ToLower(urlMethod)
 
 	for _, req := range reqList {
+
+		req.Method = strings.ToLower(req.Method)
 
 		if urlMethod != "" && req.Method != "" && req.Method != urlMethod {
 
@@ -127,9 +139,10 @@ func (s Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if urlMethod != "" {
 			req.Method = urlMethod
 		}
+
 		ecm, ok := s.ecm[req.Method]
 
-		if ! ok {
+		if !ok {
 			if req.ID != nil {
 				respList = append(respList, Response{
 					ID:      req.ID,
